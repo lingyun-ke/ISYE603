@@ -1,0 +1,275 @@
+---
+title: "Project File"
+output: html_notebook
+---
+
+
+```{r}
+library(forecast)
+library(zoo)
+library(fpp3)
+library(tsibbledata)
+library(tsibble)
+
+rm(list=ls())
+```
+
+
+Units Sold Data 
+```{r}
+sold1 <- read.csv('Units Sold 1.csv')
+sold2 <- read.csv('Units Sold 2.csv')
+#missing Units Sold 3 documentation 
+sold4 <- read.csv('Units Sold 4.csv')
+
+sold1
+```
+Claims Data 
+```{r}
+claims1 <- read.csv('Claims 1.csv')
+claims2 <- read.csv('Claims 2.csv')
+claims3 <- read.csv('Claims 3.csv')
+claims4 <- read.csv('Claims 4.csv')
+```
+
+Ratings Data 
+```{r}
+ratings1 <- read.csv('Ratings 1.csv')
+ratings2 <- read.csv('Ratings 2.csv')
+ratings3 <- read.csv('Ratings 3.csv')
+ratings1
+```
+
+
+Convert to ts object 
+Q: WHAT YEAR DO THESE START ACCUMULATING DATA? THIS DATA IS SINCE THEY STARTING SELLING BUT WHEN WAS THAT FOR EACH PRODUCT? 
+```{r}
+sold1.ts <- ts(sold1$Sum.of.TotalUnitsSold, freq = 1)
+sold2.ts <- ts(sold2$Sum.of.TotalUnitsSold)
+sold4.ts <- ts(sold4$Sum.of.TotalUnitsSold)
+
+sold1.ts
+```
+
+```{r}
+claims1.ts <- ts(claims1$Total.Claims)
+claims2.ts <- ts(claims2$Total.Claims)
+claims3.ts <- ts(claims3$Total.Claims)
+claims4.ts <- ts(claims4$Total.Claims)
+```
+
+
+Plot time series for all products units sold and claims to get an idea of trends, seasonality, etc. 
+
+```{r}
+plot(sold1.ts, ylim = c(1000,150000), ylab = "Units Sold", xlab = "Time (months from launch)", main = 'Units Sold Over Time')
+lines(sold2.ts, col = 'green')
+lines(sold4.ts, col = 'blue')
+
+```
+
+
+```{r}
+plot(claims1.ts, ylim = c(0, 3000), ylab = "Number of Claims Received", xlab = 'Time (months from launch)', main = 'Claims Received Over Time')
+lines(claims2.ts, col = 'green')
+lines(claims3.ts, col = 'red')
+lines(claims4.ts, col = 'blue')
+
+```
+
+1. Deep Dive- Product 1
+
+a) Split Train/Test
+```{r}
+#split train/test - using the last 10 months as validation (we can make this however large)
+validLength = 10
+nTrain <- length(sold1.ts) - validLength
+train.ts <- window(sold1.ts, start = c(1, 1), end = c(1, nTrain))
+valid.ts <- window(sold1.ts, start = c(1, nTrain + 1), end = c(1, nTrain + validLength))
+```
+
+b) Plotting ACF of ts data 
+```{r}
+Acf(sold1.ts)
+```
+
+c) Smoothing Methods 
+```{r}
+plot(sold1.ts, ylim = c(1000,150000), ylab = "Units Sold", xlab = "Time (months from launch)", main = 'Units Sold Over Time', xaxt = 'n')
+axis(1, at = seq(1, 45,1), labels = format(seq(1,45,1)))
+lines(c(nTrain,nTrain), c(0,150000))
+text(nTrain-3, 140000, "Train")
+text(nTrain+3, 140000, 'Test')
+
+```
+Try to use Moving Average 
+```{r}
+ma.trailing <- rollmean(train.ts, k = 12, align = 'right')
+last.ma <- tail(ma.trailing,1)
+ma.trailing.pred <- ts(rep(last.ma, validLength), start=c(1,nTrain+1), end = c(1, nTrain+validLength),freq=1)
+```
+
+```{r}
+plot(sold1.ts, ylim = c(1000,150000), ylab = "Units Sold", xlab = "Time (months from launch)", main = 'Units Sold Over Time', xaxt = 'n')
+axis(1, at = seq(1, 45,1), labels = format(seq(1,45,1)))
+lines(ma.trailing, col='blue')
+lines(ma.trailing.pred, col = 'blue', lty =2)
+lines(c(nTrain,nTrain), c(0,150000))
+text(nTrain-3, 140000, "Train")
+text(nTrain+3, 140000, 'Test')
+
+```
+
+```{r}
+accuracy(ma.trailing.pred, valid.ts)
+
+```
+
+
+Try to use Simple Exponential Smoothing 
+```{r}
+ses <- ets(train.ts, model = 'ANN')
+ses
+ses.pred <- forecast(ses, h = validLength, level =0)
+ses.pred
+```
+
+```{r}
+plot(sold1.ts, ylim = c(1000,150000), ylab = "Units Sold", xlab = "Time (months from launch)", main = 'Units Sold Over Time', xaxt = 'n')
+axis(1, at = seq(1, 45,1), labels = format(seq(1,45,1)))
+lines(ses.pred$mean, lwd = 2, col = 'blue', lty =2) 
+lines(c(nTrain,nTrain), c(0,150000))
+text(nTrain-3, 140000, "Train")
+text(nTrain+3, 140000, 'Test')
+```
+
+```{r}
+accuracy(ses.pred$mean, valid.ts)
+```
+
+Try to use Double Exponential Smoothing 
+```{r}
+des <- ets(y = train.ts, model = "ZAN")
+des.pred <- forecast(des, h = validLength, level = 0)
+des.pred
+```
+
+```{r}
+plot(sold1.ts, ylim = c(1000,150000), ylab = "Units Sold", xlab = "Time (months from launch)", main = 'Units Sold Over Time', xaxt = 'n')
+axis(1, at = seq(1, 45,1), labels = format(seq(1,45,1)))
+lines(des.pred$mean, lwd = 2, col = 'blue', lty =2) 
+lines(c(nTrain,nTrain), c(0,150000))
+text(nTrain-3, 140000, "Train")
+text(nTrain+3, 140000, 'Test')
+
+```
+
+```{r}
+accuracy(des.pred$mean, valid.ts)
+
+```
+
+
+Letting R choose ETS model 
+```{r}
+chosen_model <- ets(train.ts)
+chosen_model
+
+#model chosen is double exponential smoothing: ETS(M,A,N)
+```
+
+Regression Methods 
+
+Trend Model
+```{r}
+train.trend.lm <- tslm(train.ts ~trend)
+
+plot(train.ts, xlab = 'Time', ylab = 'Ridership')
+lines(train.trend.lm$fitted, lwd=2, col = 'blue')
+
+
+```
+
+```{r}
+summary(train.trend.lm)
+
+```
+```{r}
+train.trend.lm.pred <- forecast(train.trend.lm, h = validLength, level =0)
+
+plot(sold1.ts, ylim = c(1000,150000), ylab = "Units Sold", xlab = "Time (months from launch)", main = 'Units Sold Over Time', xaxt = 'n')
+axis(1, at = seq(1, 45,1), labels = format(seq(1,45,1)))
+lines(train.trend.lm$fitted, lwd=2, col = 'blue')
+lines(train.trend.lm.pred$mean, lty = 2, col = 'blue')
+lines(c(nTrain,nTrain), c(0,150000))
+text(nTrain-3, 140000, "Train")
+text(nTrain+3, 140000, 'Test')
+
+```
+
+
+Quadratic Trend Model 
+```{r}
+train.quad.lm <- tslm(train.ts ~ trend + I(trend^2))
+
+plot(train.ts, xlab = 'Time', ylab = 'Ridership')
+lines(train.quad.lm$fitted, lwd=2, col = 'blue')
+```
+
+```{r}
+summary(train.quad.lm)
+
+```
+
+
+```{r}
+train.quad.lm.pred <- forecast(train.quad.lm, h = validLength, level =0)
+
+plot(sold1.ts, ylim = c(1000,150000), ylab = "Units Sold", xlab = "Time (months from launch)", main = 'Units Sold Over Time', xaxt = 'n')
+axis(1, at = seq(1, 45,1), labels = format(seq(1,45,1)))
+lines(train.trend.lm$fitted, lwd=2, col = 'blue')
+lines(train.quad.lm.pred$mean, lty = 2, col = 'blue')
+lines(c(nTrain,nTrain), c(0,150000))
+text(nTrain-3, 140000, "Train")
+text(nTrain+3, 140000, 'Test')
+
+
+```
+Exponential Trend Model 
+```{r}
+train.exp.lm <- tslm(train.ts ~ trend, lambda =0)
+
+plot(train.ts, xlab = 'Time', ylab = 'Ridership')
+lines(train.exp.lm$fitted, lwd=2, col = 'blue')
+
+```
+
+```{r}
+summary(train.exp.lm)
+
+```
+
+```{r}
+train.exp.lm.pred <- forecast(train.exp.lm, h = validLength, level =0)
+
+plot(sold1.ts, ylim = c(1000,150000), ylab = "Units Sold", xlab = "Time (months from launch)", main = 'Units Sold Over Time', xaxt = 'n')
+axis(1, at = seq(1, 45,1), labels = format(seq(1,45,1)))
+lines(train.trend.lm$fitted, lwd=2, col = 'blue')
+lines(train.exp.lm.pred$mean, lty = 2, col = 'blue')
+lines(c(nTrain,nTrain), c(0,150000))
+text(nTrain-3, 140000, "Train")
+text(nTrain+3, 140000, 'Test')
+
+
+```
+
+Additive Seasonal Model with Trend 
+```{r}
+train.add.trend.lm <- tslm(train.ts ~trend + season)
+
+plot(train.ts, xlab = 'Time', ylab = 'Ridership')
+lines(train.add.trend.lm$fitted, lwd=2, col = 'blue')
+
+```
+
+
